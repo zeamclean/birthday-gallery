@@ -124,14 +124,31 @@
             text-align: center;
             z-index: 100;
             pointer-events: none;
-            background: linear-gradient(135deg, #ffffff 0%, #ffd700 30%, #ff1493 60%, #ffffff 100%);
+            background: linear-gradient(135deg, #4da6ff 0%, #66b3ff 25%, #80c1ff 50%, #99ccff 75%, #cce6ff 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            filter: drop-shadow(0 2px 8px rgba(255, 215, 0, 0.6)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.4));
+            filter: drop-shadow(0 2px 8px rgba(100, 150, 255, 0.7)) drop-shadow(0 0 25px rgba(80, 120, 255, 0.5));
             animation: fadeInScale 1.5s ease-out, float 3s ease-in-out infinite;
             letter-spacing: 2px;
-            padding: 0 20px;
+            padding: 20px 30px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        #birthday-message::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            z-index: -1;
         }
 
         @keyframes fadeInScale {
@@ -152,6 +169,43 @@
             50% {
                 transform: translateX(-50%) translateY(-10px);
             }
+        }
+
+        #san-diego-message {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            font-weight: 700;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+            background: linear-gradient(135deg, #4da6ff 0%, #66b3ff 25%, #80c1ff 50%, #99ccff 75%, #cce6ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 2px 8px rgba(100, 150, 255, 0.7)) drop-shadow(0 0 25px rgba(80, 120, 255, 0.5));
+            animation: fadeInScale 1.5s ease-out, float 3s ease-in-out infinite 0.5s;
+            letter-spacing: 2px;
+            padding: 20px 30px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        #san-diego-message::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            z-index: -1;
         }
 
         #settings-panel {
@@ -237,6 +291,12 @@
                 letter-spacing: 1px;
             }
 
+            #san-diego-message {
+                font-size: 28px;
+                bottom: 80px;
+                letter-spacing: 1px;
+            }
+
             .control-btn {
                 padding: 10px 18px;
                 font-size: 12px;
@@ -266,12 +326,27 @@
         Happy Birthday Ananda!
     </div>
 
+    <div id="san-diego-message">
+        Let's enjoy a weekend in San Diego together!
+    </div>
+
     <div id="controls">
         <button class="control-btn" id="mode-toggle">Change View</button>
         <button class="control-btn" id="settings-toggle">Settings ⚙️</button>
     </div>
 
     <div id="settings-panel" style="display: none;">
+        <div class="settings-section">
+            <h3>Text Display</h3>
+            <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <input type="checkbox" id="show-birthday-text" checked style="width: auto; margin: 0;">
+                <span style="float: none;">Show Birthday Message</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="show-sandiego-text" checked style="width: auto; margin: 0;">
+                <span style="float: none;">Show San Diego Message</span>
+            </label>
+        </div>
         <div class="settings-section">
             <h3>Confetti</h3>
             <label>Amount: <span id="confetti-amount-label">Medium</span></label>
@@ -1018,6 +1093,15 @@
         document.getElementById('balloon-size').addEventListener('input', (e) => updateBalloonSize(e.target.value));
         document.getElementById('star-amount').addEventListener('input', (e) => updateStarAmount(e.target.value));
         document.getElementById('star-size').addEventListener('input', (e) => updateStarSize(e.target.value));
+
+        // Text visibility toggles
+        document.getElementById('show-birthday-text').addEventListener('change', (e) => {
+            document.getElementById('birthday-message').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('show-sandiego-text').addEventListener('change', (e) => {
+            document.getElementById('san-diego-message').style.display = e.target.checked ? 'block' : 'none';
+        });
 
         // Animation loop
         function animate() {
