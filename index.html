@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Interactive Photo Gallery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 30%, #ffecd2 60%, #fcb69f 100%);
+            touch-action: none;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            font-size: 14px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 100;
+            pointer-events: none;
+            padding: 0 20px;
+        }
+
+        #info h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        #info p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 0 20px;
+        }
+
+        .control-btn {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .control-btn:active {
+            transform: translateY(0);
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            z-index: 1000;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            #info h1 {
+                font-size: 22px;
+            }
+
+            #info p {
+                font-size: 12px;
+            }
+
+            .control-btn {
+                padding: 10px 18px;
+                font-size: 12px;
+            }
+
+            #controls {
+                bottom: 20px;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading Gallery...</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="controls">
+        <button class="control-btn" id="mode-toggle">Change View</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        console.log('Three.js version:', THREE.REVISION);
+
+        // Scene setup
+        const scene = new THREE.Scene();
+
+        // Create gradient background
+        const canvas = document.createElement('canvas');
+        canvas.width = 2;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0, '#ff9a9e');    // Pink
+        gradient.addColorStop(0.25, '#fecfef'); // Light pink
+        gradient.addColorStop(0.5, '#ffecd2');  // Peach
+        gradient.addColorStop(0.75, '#fcb69f'); // Coral
+        gradient.addColorStop(1, '#ff9a9e');    // Pink
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 2, 256);
+
+        const backgroundTexture = new THREE.CanvasTexture(canvas);
+        scene.background = backgroundTexture;
+
+        console.log('Scene and background created');
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        camera.position.z = 12;
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        console.log('Renderer initialized');
+
+        // Orbit Controls (simple implementation)
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let rotation = { x: 0, y: 0 };
+        let targetRotation = { x: 0, y: 0 };
+        let autoRotate = true;
+
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                targetRotation.y += deltaX * 0.005;
+                targetRotation.x += deltaY * 0.005;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        renderer.domElement.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // Touch controls
+        let touchStartPos = { x: 0, y: 0 };
+        renderer.domElement.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        });
+
+        renderer.domElement.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+                const deltaX = e.touches[0].clientX - touchStartPos.x;
+                const deltaY = e.touches[0].clientY - touchStartPos.y;
+                targetRotation.y += deltaX * 0.005;
+                targetRotation.x += deltaY * 0.005;
+                touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                e.preventDefault();
+            }
+        });
+
+        // Zoom with mouse wheel
+        renderer.domElement.addEventListener('wheel', (e) => {
+            camera.position.z += e.deltaY * 0.01;
+            camera.position.z = Math.max(5, Math.min(30, camera.position.z));
+            e.preventDefault();
+        });
+
+        // Lighting - brighter and more even
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        scene.add(ambientLight);
+
+        const pointLight1 = new THREE.PointLight(0xffffff, 0.6, 100);
+        pointLight1.position.set(10, 10, 10);
+        scene.add(pointLight1);
+
+        const pointLight2 = new THREE.PointLight(0xffb3d9, 0.3, 100); // Pink
+        pointLight2.position.set(-10, -10, 10);
+        scene.add(pointLight2);
+
+        const pointLight3 = new THREE.PointLight(0xffd700, 0.3, 100); // Gold
+        pointLight3.position.set(0, 10, -10);
+        scene.add(pointLight3);
+
+        // Container for all photos, balloons, and confetti
+        const photoGroup = new THREE.Group();
+        scene.add(photoGroup);
+
+        // Birthday confetti background
+        const confettiPieces = [];
+        const confettiColors = [
+            0xff6b9d, // Pink
+            0xffd700, // Gold
+            0xff69b4, // Hot pink
+            0x87ceeb, // Sky blue
+            0x98fb98, // Pale green
+            0xdda0dd, // Plum
+            0xffa500, // Orange
+            0xff1493  // Deep pink
+        ];
+
+        for(let i = 0; i < 500; i++) {
+            const geometry = new THREE.BoxGeometry(0.15, 0.15, 0.02);
+            const material = new THREE.MeshPhongMaterial({
+                color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+                shininess: 100
+            });
+            const confetti = new THREE.Mesh(geometry, material);
+
+            confetti.position.set(
+                (Math.random() - 0.5) * 50,
+                (Math.random() - 0.5) * 50,
+                (Math.random() - 0.5) * 50
+            );
+
+            confetti.rotation.set(
+                Math.random() * Math.PI,
+                Math.random() * Math.PI,
+                Math.random() * Math.PI
+            );
+
+            confetti.userData = {
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.02,
+                    -Math.random() * 0.05 - 0.02,
+                    (Math.random() - 0.5) * 0.02
+                ),
+                rotationSpeed: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.05,
+                    (Math.random() - 0.5) * 0.05,
+                    (Math.random() - 0.5) * 0.05
+                )
+            };
+
+            confettiPieces.push(confetti);
+            photoGroup.add(confetti); // Add to photoGroup instead of scene
+        }
+
+        // Floating birthday balloons (clickable!)
+        const balloons = [];
+        const balloonColors = [0xff1493, 0xffd700, 0xff69b4, 0x87ceeb, 0xffa500, 0x98fb98];
+
+        function createBalloon() {
+            const balloonGroup = new THREE.Group();
+
+            // Balloon body (sphere) - made bigger!
+            const balloonGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+            balloonGeometry.scale(1, 1.3, 1); // Make it more balloon-shaped
+            const balloonColor = balloonColors[Math.floor(Math.random() * balloonColors.length)];
+            const balloonMaterial = new THREE.MeshPhongMaterial({
+                color: balloonColor,
+                shininess: 100,
+                specular: 0xffffff
+            });
+            const balloon = new THREE.Mesh(balloonGeometry, balloonMaterial);
+            balloonGroup.add(balloon);
+
+            // Balloon string - longer to match bigger balloon
+            const stringGeometry = new THREE.CylinderGeometry(0.02, 0.02, 3, 8);
+            const stringMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+            const string = new THREE.Mesh(stringGeometry, stringMaterial);
+            string.position.y = -2;
+            balloonGroup.add(string);
+
+            // Position randomly around the scene
+            balloonGroup.position.set(
+                (Math.random() - 0.5) * 30,
+                -15 + Math.random() * 5,
+                (Math.random() - 0.5) * 30
+            );
+
+            balloonGroup.userData = {
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.01,
+                    0.03 + Math.random() * 0.02,
+                    (Math.random() - 0.5) * 0.01
+                ),
+                floatOffset: Math.random() * Math.PI * 2,
+                isPopped: false,
+                balloon: balloon
+            };
+
+            balloons.push(balloonGroup);
+            photoGroup.add(balloonGroup); // Add to photoGroup instead of scene
+        }
+
+        // Create initial balloons
+        for (let i = 0; i < 15; i++) {
+            createBalloon();
+        }
+
+        // Photo meshes
+        const photoMeshes = [];
+        const photos = [
+            'bikes.png',
+            'fortuna.png',
+            'hiking.png',
+            'kayak.png',
+            'zoo.png',
+            'beach.png'
+        ];
+
+        const textureLoader = new THREE.TextureLoader();
+        let loadedCount = 0;
+        const totalPhotos = photos.length;
+
+        console.log('Starting to load', totalPhotos, 'images...');
+
+        // Load images
+        photos.forEach((photo, index) => {
+            console.log('Loading:', photo);
+            textureLoader.load(
+                photo,
+                (texture) => {
+                    console.log('Successfully loaded:', photo);
+                    const aspect = texture.image.width / texture.image.height;
+                    const geometry = new THREE.PlaneGeometry(3 * aspect, 3);
+
+                    const material = new THREE.MeshStandardMaterial({
+                        map: texture,
+                        side: THREE.DoubleSide,
+                        metalness: 0.3,
+                        roughness: 0.4
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.userData = {
+                        index,
+                        originalScale: 1,
+                        targetScale: 1,
+                        targetPosition: new THREE.Vector3()
+                    };
+
+                    // Add a glowing frame with birthday colors
+                    const frameColors = [0xffd700, 0xff69b4, 0xff6b9d, 0x87ceeb, 0xffa500];
+                    const frameGeometry = new THREE.PlaneGeometry(3 * aspect + 0.2, 3.2);
+                    const frameMaterial = new THREE.MeshBasicMaterial({
+                        color: frameColors[index % frameColors.length],
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.4
+                    });
+                    const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+                    frame.position.z = -0.01;
+                    mesh.add(frame);
+                    mesh.userData.frame = frame;
+                    mesh.userData.frameColor = frameColors[index % frameColors.length];
+
+                    photoMeshes.push(mesh);
+                    photoGroup.add(mesh);
+                    console.log('Added photo mesh to photoGroup. Position:', mesh.position, 'PhotoGroup children:', photoGroup.children.length);
+
+                    loadedCount++;
+                    console.log('Loaded', loadedCount, 'of', totalPhotos);
+
+                    if (loadedCount === totalPhotos) {
+                        console.log('All images loaded successfully!');
+                        document.getElementById('loading').style.display = 'none';
+                        arrangePhotos('sphere');
+                    }
+                },
+                (progress) => {
+                    console.log('Loading progress:', photo, progress);
+                },
+                (error) => {
+                    console.error('Error loading texture:', photo, error);
+                    loadedCount++;
+                    if (loadedCount === totalPhotos) {
+                        document.getElementById('loading').style.display = 'none';
+                        if (photoMeshes.length > 0) {
+                            arrangePhotos('sphere');
+                        } else {
+                            document.getElementById('loading').innerHTML = '<div style="color: white;">Failed to load images.<br>Make sure all PNG files are in the same folder.</div>';
+                        }
+                    }
+                }
+            );
+        });
+
+        // Arrangement modes
+        let currentMode = 'sphere';
+
+        function arrangePhotos(mode) {
+            console.log('Arranging photos in', mode, 'mode. Total photos:', photoMeshes.length);
+            currentMode = mode;
+            const radius = 8;
+            const total = photoMeshes.length;
+
+            photoMeshes.forEach((mesh, i) => {
+                console.log('Arranging photo', i, 'in', mode, 'mode');
+                switch(mode) {
+                    case 'sphere':
+                        const phi = Math.acos(-1 + (2 * i) / total);
+                        const theta = Math.sqrt(total * Math.PI) * phi;
+                        mesh.userData.targetPosition.set(
+                            radius * Math.cos(theta) * Math.sin(phi),
+                            radius * Math.sin(theta) * Math.sin(phi),
+                            radius * Math.cos(phi)
+                        );
+                        break;
+
+                    case 'spiral':
+                        const angle = i * (Math.PI * 2 / total) * 3;
+                        const height = (i - total / 2) * 2;
+                        const spiralRadius = 5 + i * 0.5;
+                        mesh.userData.targetPosition.set(
+                            Math.cos(angle) * spiralRadius,
+                            height,
+                            Math.sin(angle) * spiralRadius
+                        );
+                        break;
+
+                    case 'wave':
+                        const waveAngle = (i / total) * Math.PI * 4;
+                        mesh.userData.targetPosition.set(
+                            (i - total / 2) * 4,
+                            Math.sin(waveAngle) * 3,
+                            Math.cos(waveAngle) * 3
+                        );
+                        break;
+
+                    case 'carousel':
+                        const carouselAngle = (i / total) * Math.PI * 2;
+                        mesh.userData.targetPosition.set(
+                            Math.cos(carouselAngle) * radius,
+                            0,
+                            Math.sin(carouselAngle) * radius
+                        );
+                        break;
+                }
+            });
+        }
+
+        // Photo and balloon interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let selectedMesh = null;
+
+        function popBalloon(balloonGroup) {
+            balloonGroup.userData.isPopped = true;
+
+            // Create confetti burst at balloon position
+            const burstCount = 30;
+            for (let i = 0; i < burstCount; i++) {
+                const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.02);
+                const material = new THREE.MeshPhongMaterial({
+                    color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+                    shininess: 100
+                });
+                const burst = new THREE.Mesh(geometry, material);
+
+                burst.position.copy(balloonGroup.position);
+
+                const angle = (i / burstCount) * Math.PI * 2;
+                const speed = 0.1 + Math.random() * 0.2;
+                burst.userData = {
+                    velocity: new THREE.Vector3(
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        (Math.random() - 0.5) * speed
+                    ),
+                    rotationSpeed: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.2,
+                        (Math.random() - 0.5) * 0.2,
+                        (Math.random() - 0.5) * 0.2
+                    ),
+                    lifetime: 60 // frames
+                };
+
+                confettiPieces.push(burst);
+                photoGroup.add(burst); // Add to photoGroup instead of scene
+            }
+
+            // Remove balloon
+            photoGroup.remove(balloonGroup);
+            const index = balloons.indexOf(balloonGroup);
+            if (index > -1) {
+                balloons.splice(index, 1);
+            }
+
+            // Create a new balloon to replace it
+            setTimeout(() => createBalloon(), 3000);
+        }
+
+        function onPointerDown(event) {
+            const clientX = event.clientX || (event.touches && event.touches[0].clientX);
+            const clientY = event.clientY || (event.touches && event.touches[0].clientY);
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Check for balloon clicks first
+            const balloonMeshes = balloons.map(b => b.userData.balloon);
+            const balloonIntersects = raycaster.intersectObjects(balloonMeshes);
+
+            if (balloonIntersects.length > 0) {
+                const clickedBalloon = balloonIntersects[0].object;
+                const balloonGroup = balloons.find(b => b.userData.balloon === clickedBalloon);
+                if (balloonGroup) {
+                    popBalloon(balloonGroup);
+                }
+                return;
+            }
+
+            // Check for photo clicks
+            const intersects = raycaster.intersectObjects(photoMeshes);
+
+            if (intersects.length > 0) {
+                const clickedMesh = intersects[0].object;
+
+                if (selectedMesh === clickedMesh) {
+                    selectedMesh = null;
+                } else {
+                    selectedMesh = clickedMesh;
+                }
+
+                photoMeshes.forEach(mesh => {
+                    mesh.userData.targetScale = (mesh === selectedMesh) ? 1.5 : 1;
+                });
+            }
+        }
+
+        renderer.domElement.addEventListener('click', onPointerDown);
+        renderer.domElement.addEventListener('touchend', onPointerDown);
+
+        // Control button - cycles through modes
+        const modes = ['sphere', 'spiral', 'wave', 'carousel'];
+        let currentModeIndex = 0;
+
+        document.getElementById('mode-toggle').addEventListener('click', () => {
+            currentModeIndex = (currentModeIndex + 1) % modes.length;
+            arrangePhotos(modes[currentModeIndex]);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Smooth rotation
+            rotation.x += (targetRotation.x - rotation.x) * 0.1;
+            rotation.y += (targetRotation.y - rotation.y) * 0.1;
+
+            // Auto rotation
+            if (autoRotate) {
+                targetRotation.y += 0.002;
+            }
+
+            // Apply rotation to photo group
+            photoGroup.rotation.x = rotation.x;
+            photoGroup.rotation.y = rotation.y;
+
+            // Animate confetti (iterate backwards to safely remove items)
+            for (let i = confettiPieces.length - 1; i >= 0; i--) {
+                const confetti = confettiPieces[i];
+
+                // Apply movement
+                if (confetti.userData.velocity) {
+                    confetti.position.add(confetti.userData.velocity);
+                }
+
+                // Rotate confetti
+                if (confetti.userData.rotationSpeed) {
+                    confetti.rotation.x += confetti.userData.rotationSpeed.x;
+                    confetti.rotation.y += confetti.userData.rotationSpeed.y;
+                    confetti.rotation.z += confetti.userData.rotationSpeed.z;
+                }
+
+                // Handle items with lifetime (burst confetti, ribbons, sparkles)
+                if (confetti.userData.lifetime !== undefined) {
+                    confetti.userData.lifetime--;
+
+                    // Apply gravity for non-sparkle items
+                    if (!confetti.userData.fadeSpeed && confetti.userData.velocity) {
+                        confetti.userData.velocity.y -= 0.01;
+                    }
+
+                    // Handle sparkle fading
+                    if (confetti.userData.fadeSpeed && confetti.material.opacity !== undefined) {
+                        confetti.material.opacity -= confetti.userData.fadeSpeed;
+                    }
+
+                    // Remove if expired or fully faded
+                    if (confetti.userData.lifetime <= 0 || (confetti.material.opacity !== undefined && confetti.material.opacity <= 0)) {
+                        photoGroup.remove(confetti);
+                        confettiPieces.splice(i, 1);
+                        continue;
+                    }
+                } else {
+                    // Regular falling confetti (no lifetime)
+                    // Reset confetti that falls too low
+                    if (confetti.position.y < -25) {
+                        confetti.position.y = 25;
+                        confetti.position.x = (Math.random() - 0.5) * 50;
+                        confetti.position.z = (Math.random() - 0.5) * 50;
+                    }
+
+                    // Keep confetti in bounds horizontally
+                    if (Math.abs(confetti.position.x) > 25) {
+                        confetti.userData.velocity.x *= -0.5;
+                    }
+                    if (Math.abs(confetti.position.z) > 25) {
+                        confetti.userData.velocity.z *= -0.5;
+                    }
+                }
+            }
+
+            // Animate birthday text and other elements
+            const time = Date.now() * 0.001;
+
+            // Animate balloons
+            balloons.forEach(balloonGroup => {
+                // Float upward
+                balloonGroup.position.add(balloonGroup.userData.velocity);
+
+                // Add bobbing motion
+                balloonGroup.position.x += Math.sin(time + balloonGroup.userData.floatOffset) * 0.01;
+                balloonGroup.position.z += Math.cos(time + balloonGroup.userData.floatOffset) * 0.01;
+
+                // Gentle rotation
+                balloonGroup.rotation.y = Math.sin(time * 0.5 + balloonGroup.userData.floatOffset) * 0.2;
+                balloonGroup.rotation.x = Math.cos(time * 0.3 + balloonGroup.userData.floatOffset) * 0.1;
+
+                // Reset balloon when it floats too high
+                if (balloonGroup.position.y > 20) {
+                    balloonGroup.position.y = -15 + Math.random() * 5;
+                    balloonGroup.position.x = (Math.random() - 0.5) * 30;
+                    balloonGroup.position.z = (Math.random() - 0.5) * 30;
+                }
+            });
+
+            // Animate photos to target positions
+            photoMeshes.forEach((mesh, i) => {
+                if (mesh.userData.targetPosition) {
+                    mesh.position.lerp(mesh.userData.targetPosition, 0.05);
+                }
+
+                // Smooth scaling
+                const targetScale = mesh.userData.targetScale || 1;
+                const currentScale = mesh.scale.x;
+                const newScale = currentScale + (targetScale - currentScale) * 0.1;
+                mesh.scale.set(newScale, newScale, newScale);
+
+                // Look at camera (compensate for group rotation)
+                const worldPos = new THREE.Vector3();
+                mesh.getWorldPosition(worldPos);
+                mesh.lookAt(camera.position);
+
+                // Floating animation
+                mesh.position.y += Math.sin(Date.now() * 0.001 + i) * 0.002;
+
+                // Update frame glow
+                if (mesh.userData.frame) {
+                    mesh.userData.frame.material.opacity = 0.2 + Math.sin(Date.now() * 0.002 + i) * 0.1;
+                }
+            });
+
+            // Rotate lights
+            pointLight2.position.x = Math.cos(time * 0.5) * 10;
+            pointLight2.position.z = Math.sin(time * 0.5) * 10;
+            pointLight3.position.x = Math.sin(time * 0.5) * 10;
+            pointLight3.position.z = Math.cos(time * 0.5) * 10;
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        console.log('Starting animation loop');
+        animate();
+    </script>
+</body>
+</html>
